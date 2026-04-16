@@ -587,9 +587,7 @@ export default function Home() {
 
       {/* ── Footer ── */}
       <footer className="py-10 px-6 border-t border-white/5 text-center">
-        <p className="text-gray-600 text-sm">
-          Built with ❤️ by Manish · Powered by Next.js, MongoDB & Clerk
-        </p>
+        <p className="text-gray-600 text-sm">Built with ❤️ by Manish</p>
       </footer>
     </main>
   );
