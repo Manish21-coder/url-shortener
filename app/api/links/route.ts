@@ -17,12 +17,11 @@ export async function GET(req: Request) {
 
   let query: any = {};
 
-  // 🔐 USER FILTER
-  if (userId) {
-    query.userId = userId;
-  } else {
-    query.userId = null;
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  query.userId = userId;
 
   // 🔍 Search
   if (search) {

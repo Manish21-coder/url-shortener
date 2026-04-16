@@ -16,10 +16,20 @@ export async function POST(req: Request) {
     }
 
     // 🔥 GET alias & prefix
-    const { originalUrl, prefix, alias } = await req.json();
+    const { originalUrl, prefix, alias, folder } = await req.json();
 
     if (!originalUrl) {
       return Response.json({ error: "URL required" }, { status: 400 });
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(originalUrl);
+    } catch {
+      return Response.json({ error: "Invalid URL" }, { status: 400 });
+    }
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return Response.json({ error: "Only http and https URLs are allowed" }, { status: 400 });
     }
 
     let shortCode;
@@ -51,6 +61,7 @@ export async function POST(req: Request) {
       originalUrl,
       shortCode,
       userId: userId || null,
+      folder: folder?.trim() || "",
     });
 
     return Response.json({ data: newLink });

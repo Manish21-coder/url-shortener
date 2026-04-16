@@ -2,42 +2,21 @@ import mongoose, { Schema, model, models } from "mongoose";
 
 const LinkSchema = new Schema(
   {
-    originalUrl: {
-      type: String,
-      required: true,
-    },
-
-    shortCode: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-
-    //  FIXED FOR CLERK
-    userId: {
-      type: String,
-      default: null,
-    },
-
-    clicks: {
-      type: Number,
-      default: 0,
-    },
-
+    originalUrl: { type: String, required: true },
+    urls: [{ type: String }],
+    shortCode: { type: String, required: true, unique: true },
+    userId: { type: String, default: null },
+    folder: { type: String, default: "" },
+    clicks: { type: Number, default: 0 },
     clickHistory: [
       {
-        date: {
-          type: String, // fine for now
-          required: true,
-        },
-        clicks: {
-          type: Number,
-          default: 0,
-        },
+        timestamp: { type: String, required: true },
+        userAgent: { type: String, default: "" },
+        ip: { type: String, default: "" },
       },
     ],
   },
-  { timestamps: true } // 🔥 better than manual createdAt
+  { timestamps: true }
 );
 
 const Link = models.Link || model("Link", LinkSchema);

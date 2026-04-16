@@ -1,35 +1,65 @@
 import { connectDB } from "@/lib/db";
 import Link from "@/lib/models/Link";
 import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export async function GET(req: Request, context: { params: Promise<{ shortCode: string }> }) {
+function validateUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "Only http/https URLs are allowed";
+    return null;
+  } catch {
+    return "Invalid URL format";
+  }
+}
+
+export async function GET(
+  _req: Request,
+  context: { params: Promise<{ shortCode: string }> }
+) {
   try {
     await connectDB();
-
-    // Unwrap params
     const { shortCode } = await context.params;
 
-    // Optional: auth
-    let userId = null;
-    try {
-      const authData = await auth();
-      userId = authData.userId;
-    } catch (err) {
-      console.log("Guest user:", err);
-    }
+    const link = await Link.findOne({ shortCode });
+    if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const link = await Link.findOne({
-      shortCode,
-      // userId: userId || null, // optional if you want user-specific links
-    });
-
-    if (!link) {
-      return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
-    }
-
-    return new Response(JSON.stringify({ data: link }), { status: 200 });
-  } catch (err) {
-    console.error("LINK FETCH ERROR:", err);
-    return new Response(JSON.stringify({ error: "Something went wrong" }), { status: 500 });
+    return NextResponse.json({ data: link });
+  } catch {
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
+}
+
+export async function PATCH(
+  req: Request,
+  context: { params: Promise<{ shortCode: string }> }
+) {
+  await connectDB();
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { shortCode } = await context.params;
+  const { originalUrl, folder, urls } = await req.json();
+
+  const link = await Link.findOne({ shortCode, userId });
+  if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (originalUrl !== undefined) {
+    const err = validateUrl(originalUrl);
+    if (err) return NextResponse.json({ error: err }, { status: 400 });
+    link.originalUrl = originalUrl;
+  }
+
+  if (folder !== undefined) link.folder = folder;
+
+  if (urls !== undefined) {
+    for (const u of urls) {
+      const err = validateUrl(u);
+      if (err) return NextResponse.json({ error: `${err}: ${u}` }, { status: 400 });
+    }
+    link.urls = urls;
+  }
+
+  await link.save();
+  return NextResponse.json({ data: link });
 }
