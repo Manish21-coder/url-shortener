@@ -117,6 +117,7 @@ const fadeUpProps = (delay = 0) => ({
 export default function Home() {
   const { isSignedIn } = useUser();
   const heroRef = useRef<HTMLElement>(null);
+  const qrRef = useRef<HTMLCanvasElement>(null);
 
   const [url, setUrl] = useState("");
   const [prefix, setPrefix] = useState("");
@@ -320,8 +321,23 @@ export default function Home() {
                   {copied ? "Copied ✅" : "Copy"}
                 </motion.button>
               </div>
-              <div className="bg-white p-3 rounded-xl">
-                <QRCodeCanvas value={shortUrl} size={160} />
+              <div className="flex flex-col items-center gap-3">
+                <div className="bg-white p-3 rounded-xl">
+                  <QRCodeCanvas ref={qrRef} value={shortUrl} size={160} />
+                </div>
+                <button
+                  onClick={() => {
+                    const canvas = qrRef.current;
+                    if (!canvas) return;
+                    const link = document.createElement("a");
+                    link.download = `snapshort-qr-${shortUrl.split("/").pop()}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                  }}
+                  className="min-h-[44px] w-full px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-sm font-medium transition hover:scale-105"
+                >
+                  Download QR
+                </button>
               </div>
             </motion.div>
           )}
