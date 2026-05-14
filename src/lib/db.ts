@@ -15,7 +15,26 @@ export async function connectDB() {
   const MONGODB_URI = process.env.MONGODB_URI;
 
   if (!MONGODB_URI) {
-    throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    throw new Error("MONGODB_URI is not defined — add it to .env.local");
+  }
+
+  // Detect unencoded special characters in credentials that break URI parsing.
+  // The @ sign in a password must be written as %40 in the connection string.
+  // Quick check: more than one @ means the password contains a raw @ sign.
+  const atCount = (MONGODB_URI.match(/@/g) || []).length;
+  if (atCount > 1) {
+    throw new Error(
+      "MONGODB_URI contains an unencoded '@' in the password. " +
+      "Replace '@' in the password with '%40' (e.g. Manish@8908 → Manish%408908)."
+    );
+  }
+
+  // Log the host only (no credentials)
+  try {
+    const { host } = new URL(MONGODB_URI);
+    console.log("[db] Connecting to MongoDB host:", host);
+  } catch {
+    console.log("[db] Connecting to MongoDB (could not parse URI for logging)");
   }
 
   if (cached.conn) {
@@ -28,8 +47,11 @@ export async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      console.log("MongoDB connected ✅");
+      console.log("[db] MongoDB connected ✅");
       return mongoose;
+    }).catch((err) => {
+      console.error("[db] MongoDB connection error:", err.message);
+      throw err;
     });
   }
 

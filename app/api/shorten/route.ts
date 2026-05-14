@@ -2,72 +2,125 @@ import { connectDB } from "@/lib/db";
 import Link from "@/lib/models/Link";
 import { auth } from "@clerk/nextjs/server";
 
+const isDev = process.env.NODE_ENV === "development";
+
 export async function POST(req: Request) {
+  console.log("[shorten] POST received");
+
+  // ── 1. Parse body ──────────────────────────────────────────────────────────
+  let body: { originalUrl?: string; prefix?: string; alias?: string; folder?: string };
   try {
+    body = await req.json();
+    console.log("[shorten] body parsed:", JSON.stringify(body));
+  } catch (e) {
+    console.error("[shorten] Failed to parse JSON body:", e);
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { originalUrl, prefix, alias, folder } = body;
+
+  // ── 2. Validate URL ────────────────────────────────────────────────────────
+  if (!originalUrl) {
+    console.warn("[shorten] Missing originalUrl");
+    return Response.json({ error: "URL required" }, { status: 400 });
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(originalUrl);
+  } catch (e) {
+    console.warn("[shorten] Invalid URL format:", originalUrl, e);
+    return Response.json({ error: "Invalid URL" }, { status: 400 });
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    console.warn("[shorten] Rejected protocol:", parsedUrl.protocol);
+    return Response.json({ error: "Only http and https URLs are allowed" }, { status: 400 });
+  }
+
+  console.log("[shorten] URL validated:", originalUrl);
+
+  // ── 3. Auth (optional — guests allowed) ───────────────────────────────────
+  let userId: string | null = null;
+  try {
+    const authData = await auth();
+    userId = authData.userId;
+    console.log("[shorten] Auth resolved, userId:", userId ?? "guest");
+  } catch (e) {
+    console.log("[shorten] Auth skipped (guest):", e);
+  }
+
+  // ── 4. Connect to DB ───────────────────────────────────────────────────────
+  try {
+    console.log("[shorten] Connecting to DB…");
     await connectDB();
+    console.log("[shorten] DB connected");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[shorten] DB connection failed:", msg);
+    return Response.json(
+      { error: "Database connection failed", ...(isDev && { detail: msg }) },
+      { status: 500 }
+    );
+  }
 
-    // 🔐 Safe auth handling
-    let userId = null;
-    try {
-      const authData = await auth();
-      userId = authData.userId;
-    } catch (err) {
-      console.log("Auth error (guest user):", err);
-    }
+  // ── 5. Resolve shortCode ───────────────────────────────────────────────────
+  let shortCode: string | undefined;
 
-    // 🔥 GET alias & prefix
-    const { originalUrl, prefix, alias, folder } = await req.json();
-
-    if (!originalUrl) {
-      return Response.json({ error: "URL required" }, { status: 400 });
-    }
-
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(originalUrl);
-    } catch {
-      return Response.json({ error: "Invalid URL" }, { status: 400 });
-    }
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return Response.json({ error: "Only http and https URLs are allowed" }, { status: 400 });
-    }
-
-    let shortCode;
-
+  try {
     if (alias) {
-      // ✅ Use alias as-is (after cleaning)
       shortCode = alias.trim().toLowerCase().replace(/[^a-z0-9\-]/g, "");
+      console.log("[shorten] Using alias shortCode:", shortCode);
       const exists = await Link.findOne({ shortCode });
       if (exists) {
+        console.warn("[shorten] Alias already exists:", shortCode);
         return Response.json({ error: "Alias already exists" }, { status: 400 });
       }
     } else {
-      // 🔥 CLEAN PREFIX (important)
       const cleanPrefix =
         prefix?.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "mani";
+      console.log("[shorten] Generating shortCode with prefix:", cleanPrefix);
 
-      // 🔥 ENSURE UNIQUE SHORTCODE
       let exists = true;
+      let attempts = 0;
       while (exists) {
         const randomPart = Math.random().toString(36).substring(2, 6);
         shortCode = `${cleanPrefix}-${randomPart}`;
-
         const existing = await Link.findOne({ shortCode });
         if (!existing) exists = false;
+        attempts++;
+        if (attempts > 20) throw new Error("Could not generate unique shortCode after 20 attempts");
       }
+      console.log("[shorten] Generated unique shortCode:", shortCode, "after", "attempts");
     }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[shorten] shortCode resolution error:", msg);
+    return Response.json(
+      { error: "Failed to generate short code", ...(isDev && { detail: msg }) },
+      { status: 500 }
+    );
+  }
 
+  // ── 6. Save to DB ──────────────────────────────────────────────────────────
+  try {
+    console.log("[shorten] Saving link:", { originalUrl, shortCode, userId, folder });
     const newLink = await Link.create({
       originalUrl,
       shortCode,
       userId: userId || null,
       folder: folder?.trim() || "",
     });
-
+    console.log("[shorten] Saved successfully, _id:", newLink._id);
     return Response.json({ data: newLink });
-
-  } catch (error) {
-    console.error("SHORTEN API ERROR:", error);
-    return Response.json({ error: "Something went wrong" }, { status: 500 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack : undefined;
+    console.error("[shorten] DB save error:", msg);
+    if (stack) console.error("[shorten] Stack:", stack);
+    return Response.json(
+      { error: "Failed to save link", ...(isDev && { detail: msg }) },
+      { status: 500 }
+    );
   }
 }
